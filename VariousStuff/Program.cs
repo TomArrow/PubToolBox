@@ -1,7 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Web;
 
 namespace VariousStuff
 {
@@ -9,11 +13,230 @@ namespace VariousStuff
     {
         static void Main(string[] args)
         {
+            foreach (string file in args)
+            {
+                //DoProcess(file);
+                //DoProcess2(file);
+                DoProcess3(file);
+            }
+
+            //DoProcess("dlmeta 2021-09-06.7z");
+
+            Console.ReadKey();
+        }
+        
+        static void MainOld(string[] args)
+        {
             //quake3Thing();
             //asciiNumbersStuff();
             namehacking();
         }
 
+        static Regex cases = new Regex(@"case\s*([\dxa-f]+)\s*:(?:\s*?\/\/\s*([^\n\r\s\?]+)([^\n\r]+)?)?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        static Regex hexnum = new Regex(@"^([\da-fA-F]+)h$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        static Regex gitemfinder = new Regex(@"gitem_t(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|int).)*?int\s*([0-9a-fA-Fh]+)(?:(?!gitem_t|itemType_t).)*?itemType_t\s*(IT_\w+)(?:(?!gitem_t|int).)*?int\s*([0-9a-fA-Fh]+)(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?(?:(?!gitem_t|char).)*?char \*[^\n\r=]*(?:=\s*([^\n]+))?", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+
+
+        static void DoProcess3(string filename)
+        {
+            string text = File.ReadAllText(filename);
+            var matches = gitemfinder.Matches(text);
+            int maxIndex = 0;
+            List<string> items = new List<string>();
+            StringBuilder sb = new StringBuilder();
+            foreach(Match match in matches)
+            {
+                //sb.Clear();
+                sb.Append("{\n");
+                for(int i = 1; i < 16; i++)
+                {
+                    sb.Append("\t");
+                    if (i == 3) {
+                        sb.Append("{\n");
+                        continue;
+                    }
+                    if(i>=4 && i <= 7)
+                    {
+                        sb.Append("\t");
+                    }
+                    if (match.Groups[i].Success)
+                    {
+                        string val = match.Groups[i].Value.Trim();
+                        if (hexnum.Match(val).Success)
+                        {
+                            int number = Convert.ToInt32($"0x{val.Substring(0,val.Length-1)}",16);
+                            sb.Append(number);
+                        }
+                        else
+                        {
+                            sb.Append(val);
+                        }
+                    }
+                    else
+                    {
+                        if (i >= 13)
+                        {
+                            sb.Append("\"\"");
+                        }
+                        else
+                        {
+                            sb.Append("NULL");
+                        }
+                    }
+                    if (i == 7)
+                    {
+                        sb.Append("\n\t}");
+                    }
+
+                    if(i < 15)
+                    {
+                        sb.Append(",\n");
+                    }
+                }
+                sb.Append("\n},\n");
+                items.Add(sb.ToString());
+            }
+
+            Console.WriteLine(sb.ToString());
+            File.WriteAllText(filename+".gitemparsed.c",sb.ToString());
+        }
+        static void DoProcess2(string filename)
+        {
+            string text = File.ReadAllText(filename);
+            var matches =  cases.Matches(text);
+            int maxIndex = 0;
+            Dictionary<int, string> list = new Dictionary<int, string>();
+            Dictionary<int, string> listComments = new Dictionary<int, string>();
+            foreach(Match match in matches)
+            {
+                string numberString = match.Groups[1].Value;
+                string nameString = match.Groups[2].Success ? match.Groups[2].Value : null;
+                string commentString = match.Groups[3].Success ? match.Groups[3].Value : null;
+                int parsedNumber = 0;
+                if (numberString.StartsWith("0x"))
+                {
+                    parsedNumber = Convert.ToInt32(numberString, 16);
+                }
+                else
+                {
+                    parsedNumber = int.Parse(numberString);
+                }
+                if (list.ContainsKey(parsedNumber))
+                {
+                    if(list[parsedNumber] == null)
+                    {
+                        list[parsedNumber] = nameString;
+                    }
+                    else
+                    {
+                        list[parsedNumber] = list[parsedNumber] + "," + nameString;
+                    }
+                }
+                else
+                {
+                    list.Add(parsedNumber, nameString);
+                }
+                if (listComments.ContainsKey(parsedNumber))
+                {
+                    if(listComments[parsedNumber] == null)
+                    {
+                        listComments[parsedNumber] = commentString;
+                    }
+                    else
+                    {
+                        listComments[parsedNumber] = listComments[parsedNumber] + "," + commentString;
+                    }
+                }
+                else
+                {
+                    listComments.Add(parsedNumber, commentString);
+                }
+                maxIndex = Math.Max(parsedNumber, parsedNumber);
+            }
+            StringBuilder sb = new StringBuilder();
+
+            int unknown = 0;
+            for(int i = 0; i <= maxIndex; i++)
+            {
+                if (list.ContainsKey(i) && list[i] != null)
+                {
+                    sb.Append(list[i]+",");
+                }
+                else
+                {
+                    sb.Append($"EV_MBII_UNKNOWN{unknown++},");
+                }
+                if (listComments.ContainsKey(i) && listComments[i] != null)
+                {
+                    sb.Append("\t\t\t//"+listComments[i]);
+                }
+                sb.Append("\n");
+            }
+
+            File.WriteAllText(filename+".parsed.c",sb.ToString());
+        }
+
+        static void DoProcess(string filename)
+        {
+
+            try
+            {
+
+                string data = File.ReadAllText(filename);
+
+                JsonSerializerOptions opt = new JsonSerializerOptions();
+                opt.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString;
+                WarcupData warcupData = JsonSerializer.Deserialize<WarcupData>(data, opt);
+                string cupIdStr = warcupData.cupId;
+                List<string> demoPaths = new List<string>();
+                foreach (Entry entry in warcupData.vq3Results.valid)
+                {
+                    demoPaths.Add(entry.demopath);
+                }
+                foreach (Entry entry in warcupData.vq3Results.invalid)
+                {
+                    demoPaths.Add(entry.demopath);
+                }
+                foreach (Entry entry in warcupData.cpmResults.valid)
+                {
+                    demoPaths.Add(entry.demopath);
+                }
+                foreach (Entry entry in warcupData.cpmResults.invalid)
+                {
+                    demoPaths.Add(entry.demopath);
+                }
+
+                List<string> demoUrls = new List<string>();
+                foreach (string demoPath in demoPaths)
+                {
+                    //demoUrls.Add("dm_68,https://dfcomps.ru/api/uploads/demos/cup"+cupIdStr+"/"+demoPath);
+                }
+                //demoUrls.Add("zip,https://dfcomps.ru/api/" + warcupData.cup.archiveLink);
+
+
+                try
+                {
+                    TableJson tableData = JsonSerializer.Deserialize<TableJson>(warcupData.tableJson, opt);
+                    foreach(KeyValuePair<string,TableEntry> te in tableData.vq3)
+                    {
+                        demoUrls.Add(HTML5DecodePortable.Utility.HtmlDecode(HttpUtility.HtmlDecode(te.Value.demo)));
+                    }
+                }
+                catch(Exception e)
+                {
+
+
+                }
+
+                File.AppendAllLines("demoUrls2.txt",demoUrls);
+                //File.AppendAllLines("tablejson.txt",new string[] { warcupData.tableJson });
+
+            }catch(Exception e)
+            {
+
+            }
+        }
 
 
         static void namehacking()

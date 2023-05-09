@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "VariousStuff": {
+      "commandName": "Project",
+      "commandLineArgs": "\"bg_itemlist _ data view.c\""
+    }
+  }
+}

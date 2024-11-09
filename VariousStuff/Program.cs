@@ -38,7 +38,104 @@ namespace VariousStuff
             //quake3ThingGravityRatiosOverTime();
             //Q3FPSAcceleration();
             //Q3FPSAccelerationProgressive();
-            Q3FPSAcceleration3D();
+            //Q3FPSAcceleration3D();
+            GroundFrictionMax3D();
+        }
+
+        static void GroundFrictionMax3D()
+        {
+            float accel = 10.0f;
+            float friction = 6.0f;
+            float basespeed = 250.0f;
+            for (int i = 1; i < 1000; i++)
+            {
+                float maxSpeedFloat = 0;
+                float maxSpeedSnap = 0;
+                for(int snap =0;snap < 2; snap++)
+                {
+                    float maxSpeed = 0;
+                    float frameTime = (float)i * 0.001f;
+                    //float speed = 0;
+                    Vector3 speed = new Vector3() { X = 0.001f };
+                    for (int a = 0; a < 10000; a++)
+                    {
+                        speed *= 1.0f - frameTime * friction;
+                        float bestAngle = (float)Math.Acos(((basespeed - (accel * basespeed * frameTime)) / speed.Length()));// *(180.0f / (float)Math.PI);
+                        if (float.IsNaN(bestAngle))
+                        {
+                            bestAngle = 0;
+                            speed += Vector3.Normalize(speed) * accel * basespeed * frameTime;
+                            //speed += accel * basespeed * frameTime;
+                        }
+                        else
+                        {
+                            //Vector3 old = new Vector3() { X = speed };
+                            //Vector3 add = new Vector3() { X = accel * basespeed * frameTime };
+                            Vector3 add = Vector3.Normalize(speed) * accel * basespeed * frameTime;
+                            Vector3 rotated = Vector3.Transform(add, Matrix4x4.CreateRotationZ(bestAngle));
+                            speed = (speed + rotated);//.Length();
+                                                      //speed += accel * basespeed * frameTime;
+                            if(snap > 0)
+                            {
+                                speed.X = (float)Math.Round(speed.X);
+                                speed.Y = (float)Math.Round(speed.Y);
+                                speed.Z = (float)Math.Round(speed.Z);
+                            }
+                        }
+                        if (speed.Length() > maxSpeed)
+                        {
+                            maxSpeed = speed.Length();
+                        }
+                    }
+
+                    if (snap > 0)
+                    {
+                        maxSpeedSnap = maxSpeed;
+                    }
+                    else
+                    {
+                        maxSpeedFloat = maxSpeed;
+                    }
+
+                }
+                Console.WriteLine($"FPS: {1000.0f / (float)i}, maxSpeed (float): {maxSpeedFloat}, maxSpeed (vsnap): {maxSpeedSnap}");
+
+            }
+        }
+        static void GroundFrictionMax()
+        {
+            float accel = 10.0f;
+            float friction = 6.0f;
+            float basespeed = 250.0f;
+            for(int i = 1; i < 1000; i++)
+            {
+                float maxSpeed = 0;
+                float frameTime = (float)i * 0.001f;
+                float speed = 0;
+                for(int a = 0; a < 10000; a++)
+                {
+                    speed *= 1.0f - frameTime * friction;
+                    float bestAngle = (float)Math.Acos(((basespeed - (accel * basespeed * frameTime)) / speed));// *(180.0f / (float)Math.PI);
+                    if (float.IsNaN(bestAngle))
+                    {
+                        bestAngle = 0; 
+                        speed += accel * basespeed * frameTime;
+                    }
+                    else
+                    {
+                        Vector3 old = new Vector3() { X = speed };
+                        Vector3 add = new Vector3() { X = accel * basespeed * frameTime };
+                        Vector3 rotated = Vector3.Transform(add, Matrix4x4.CreateRotationZ(bestAngle));
+                        speed = (old + rotated).Length();
+                        //speed += accel * basespeed * frameTime;
+                    }
+                    if (speed > maxSpeed)
+                    {
+                        maxSpeed = speed;
+                    }
+                }
+                Console.WriteLine($"FPS: {1000.0f/(float)i}, maxSpeed: {maxSpeed}");
+            }
         }
 
         static Regex cases = new Regex(@"case\s*([\dxa-f]+)\s*:(?:\s*?\/\/\s*([^\n\r\s\?]+)([^\n\r]+)?)?", RegexOptions.Compiled | RegexOptions.IgnoreCase);

@@ -672,7 +672,9 @@ namespace VariousStuff
             float f, finalWishSpeed;
             float accelAddSlow, accelAddHigh;
             float neededSpeedSlow, neededSpeedHigh;
-            float normalDirAmt;
+            float idealVelRatio;
+            Vector2 idealFrontalVec;
+            float frontOvershoot;
 
             currentspeed = Vector2.Dot(velocity, wishdir);
 
@@ -708,9 +710,24 @@ namespace VariousStuff
                 accelspeed = addspeed;
             }
 
+            wishdir *= accelspeed;
 
-            velocity.X += accelspeed * wishdir.X;
-            velocity.Y += accelspeed * wishdir.Y;
+            float velTotal =velocity.Length();
+            float w = accelAddSlow + wishspeed;
+            idealVelRatio = w * w / (velocity.LengthSquared());
+            idealVelRatio *= accelAddSlow / (wishspeed+accelAddSlow);
+            float maxFront = idealVelRatio * velTotal;
+            Vector2 normVel = Vector2.Normalize(velocity);
+            //idealFrontalVec = velocity * idealVelRatio;
+            frontOvershoot = Vector2.Dot(wishdir, normVel);
+            if(frontOvershoot > maxFront)
+            {
+                float ratio = maxFront / frontOvershoot;
+                //ratio *= 0.95f;
+                wishdir *= ratio;
+            }
+
+            velocity += wishdir;
             return velocity;
         }
 
@@ -728,7 +745,7 @@ namespace VariousStuff
             {
                 if (set.dreamMode)
                 {
-                    frontVec = PM_DreamAccelerate(vel, frontVec, frametime, 320, 1, 70, 30);
+                    frontVec = PM_DreamAccelerate(vel, frontVec, frametime, 320, 1, 150,100);
                 }
                 else
                 {

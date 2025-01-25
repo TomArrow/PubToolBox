@@ -21,7 +21,7 @@ namespace VariousStuff
             {
                 //DoProcess(file);
                 //DoProcess2(file);
-                DoProcess3(file);
+                //DoProcess3(file);
             }
 
             //DoProcess("dlmeta 2021-09-06.7z");
@@ -39,7 +39,9 @@ namespace VariousStuff
             //Q3FPSAcceleration();
             //Q3FPSAccelerationProgressive();
             //Q3FPSAcceleration3D();
-            GroundFrictionMax3D();
+            //GroundFrictionMax3D();
+            Q3WishSpeedAccelForwardCalc();
+
         }
 
         static void GroundFrictionMax3D()
@@ -596,6 +598,255 @@ namespace VariousStuff
             }
 
             
+        }
+
+        static double Q3OptimumAngleCalc(Vector2 vel, AccelSettings set, float friction, float frametime)
+        {
+            return Math.Acos((double)((set.wishspeed - (set.accel * set.wishspeed * frametime)) / (vel.Length() * (1 - friction * (frametime))))) *180.0/Math.PI;
+        }
+
+        //static float AngleSubtract(float angle1,float angle2)
+        //{
+        //    float angleDelta = angle1 - angle2;
+        //    while (angleDelta > 180.0f)
+        //    {
+        //        angleDelta -= 360.0f;
+        //    }
+        //    while (angleDelta < -180.0f)
+        //    {
+        //        angleDelta += 360.0f;
+        //    }
+        //    return angleDelta;
+        //}
+
+        static Vector2 PM_QuaJKAccelerate(Vector2 velocity,Vector2 wishdir, float frametime, float wishspeed, float baseAccel, float maxAccel, float maxAccelWishSpeed)
+        {
+            // q2 style
+            int i;
+            float addspeed, accelspeed, currentspeed;
+            float accel;
+            float f, finalWishSpeed;
+            float accelAddSlow, accelAddHigh;
+            float neededSpeedSlow, neededSpeedHigh;
+
+            currentspeed = Vector2.Dot(velocity, wishdir);
+
+            if (currentspeed >= wishspeed) return velocity;
+
+            accelAddSlow = baseAccel * frametime * wishspeed;
+            accelAddHigh = maxAccel * frametime * maxAccelWishSpeed;
+
+            neededSpeedSlow = wishspeed - accelAddSlow;
+            neededSpeedHigh = maxAccelWishSpeed - accelAddHigh;
+
+            f = (currentspeed - neededSpeedHigh) / (neededSpeedSlow - neededSpeedHigh);
+
+            if (f < 0) f = 0;
+            else if (f > 1) f = 1;
+
+            accel = (f * baseAccel) + ((1.0f - f) * maxAccel);
+            finalWishSpeed = (f * wishspeed) + ((1.0f - f) * maxAccelWishSpeed);
+
+            accelspeed = accel * frametime * finalWishSpeed;
+
+            addspeed = finalWishSpeed - currentspeed;
+            if (addspeed <= 0)
+            {
+                return velocity;
+            }
+
+            if (accelspeed > addspeed)
+            {
+                accelspeed = addspeed;
+            }
+            velocity.X += accelspeed * wishdir.X;
+            velocity.Y += accelspeed * wishdir.Y;
+            return velocity;
+        }
+        static Vector2 PM_DreamAccelerate(Vector2 velocity,Vector2 wishdir, float frametime, float wishspeed, float baseAccel, float maxAccel, float maxAccelWishSpeed)
+        {
+            // q2 style
+            int i;
+            float addspeed, accelspeed, currentspeed;
+            float accel;
+            float f, finalWishSpeed;
+            float accelAddSlow, accelAddHigh;
+            float neededSpeedSlow, neededSpeedHigh;
+            float normalDirAmt;
+
+            currentspeed = Vector2.Dot(velocity, wishdir);
+
+            if (currentspeed >= wishspeed) return velocity;
+
+            accelAddSlow = baseAccel * frametime * wishspeed;
+            accelAddHigh = maxAccel * frametime * maxAccelWishSpeed;
+
+            neededSpeedSlow = wishspeed - accelAddSlow;
+            neededSpeedHigh = maxAccelWishSpeed - accelAddHigh;
+
+            f = (currentspeed - neededSpeedHigh) / (neededSpeedSlow - neededSpeedHigh);
+
+            if (f < 0) f = 0;
+            else if (f > 1) f = 1;
+
+            // f =1.0f- (1.0f-f) * (1.0f-f);
+            //f =0.94f*f + 0.06f*f*f*f;
+
+            accel = (f * baseAccel) + ((1.0f - f) * maxAccel);
+            finalWishSpeed = (f * wishspeed) + ((1.0f - f) * maxAccelWishSpeed);
+
+            accelspeed = accel * frametime * finalWishSpeed;
+
+            addspeed = finalWishSpeed - currentspeed;
+            if (addspeed <= 0)
+            {
+                return velocity;
+            }
+
+            if (accelspeed > addspeed)
+            {
+                accelspeed = addspeed;
+            }
+
+
+            velocity.X += accelspeed * wishdir.X;
+            velocity.Y += accelspeed * wishdir.Y;
+            return velocity;
+        }
+
+        static Vector2 Q3ApplyOptimumAccel(Vector2 vel, AccelSettings set, float friction, float frametime, Vector2 approach, ref float angleChange)
+        {
+            double bestAngle = Q3OptimumAngleCalc(vel, set, friction, frametime);
+            float originalAngle = Q3Accelerator.vecToYaw(Vector2.Normalize(vel));
+            float angleApproach = Q3Accelerator.vecToYaw(Vector2.Normalize(approach));
+            float angleDelta = AngleSubtract(originalAngle, angleApproach);
+            float angle = originalAngle;
+            bestAngle += set.angleOffset;
+            angle += angleDelta > 0 ? -(float)bestAngle : (float)bestAngle;
+            Vector2 frontVec = Q3Accelerator.AngleFrontVec(angle);
+            if (set.quajkMode)
+            {
+                if (set.dreamMode)
+                {
+                    frontVec = PM_DreamAccelerate(vel, frontVec, frametime, 320, 1, 70, 30);
+                }
+                else
+                {
+                    frontVec = PM_QuaJKAccelerate(vel, frontVec, frametime, 320, 1, 70, 30);
+                }
+            }
+            else
+            {
+                frontVec *= set.accel * frametime * set.wishspeed;
+                frontVec += vel;
+            }
+            float angleNew = Q3Accelerator.vecToYaw(Vector2.Normalize(frontVec));
+            float newAngleDelta = Math.Abs(AngleSubtract(angleNew, originalAngle));
+            angleChange += newAngleDelta;
+            return frontVec;
+        }
+
+        struct AccelSettings {
+            public string name;
+            public float wishspeed;
+            public float accel;
+            public bool quajkMode;
+            public bool dreamMode;
+            public float angleOffset;
+        }
+
+
+        static void Q3WishSpeedAccelForwardCalc()
+        {
+            Vector2 start = new Vector2(1000,0);
+            Vector2 startNormalized = Vector2.Normalize(start);
+            float frametime = 0.007f;
+            AccelSettings[] settingsSet = new AccelSettings[] {  
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,name="VQ3" }, // vq3
+                new AccelSettings(){wishspeed = 30,accel = 70.0f,name="CPM" }, // vq3
+                new AccelSettings(){wishspeed = 200,accel = 2f,name="test1" }, // vq3
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=0.0f,name="QuaJK-0" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=1.0f,name="QuaJK-1" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=2.0f,name="QuaJK-2" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=3.0f,name="QuaJK-3" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=4.0f,name="QuaJK-4" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=5.0f,name="QuaJK-5" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=6.0f,name="QuaJK-6" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=7.0f,name="QuaJK-7" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=8.0f,name="QuaJK-8" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=9.0f,name="QuaJK-9" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=10.0f,name="QuaJK-10" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=11.0f,name="QuaJK-11" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=12.0f,name="QuaJK-12" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=13.0f,name="QuaJK-13" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=14.0f,name="QuaJK-14" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=15.0f,name="QuaJK-15" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=16.0f,name="QuaJK-16" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=17.0f,name="QuaJK-17" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=18.0f,name="QuaJK-18" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=19.0f,name="QuaJK-19" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=20.0f,name="QuaJK-20" }, 
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=25.0f,name="QuaJK-25" }, 
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=30.0f,name="QuaJK-30" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=35.0f,name="QuaJK-35" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=40.0f,name="QuaJK-40" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=45.0f,name="QuaJK-45" }, 
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=50.0f,name="QuaJK-50" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.0f,name="dream-0" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=1.0f,name="dream-1" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=2.0f,name="dream-2" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=3.0f,name="dream-3" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=4.0f,name="dream-4" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=5.0f,name="dream-5" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=6.0f,name="dream-6" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=7.0f,name="dream-7" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=8.0f,name="dream-8" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=9.0f,name="dream-9" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=10.0f,name="dream-10" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=11.0f,name="dream-11" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=12.0f,name="dream-12" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=13.0f,name="dream-13" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=14.0f,name="dream-14" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=15.0f,name="dream-15" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=16.0f,name="dream-16" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=17.0f,name="dream-17" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=18.0f,name="dream-18" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=19.0f,name="dream-19" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=20.0f,name="dream-20" }, 
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=25.0f,name="dream-25" }, 
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=30.0f,name="dream-30" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=35.0f,name="dream-35" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=40.0f,name="dream-40" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=45.0f,name="dream-45" }, 
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=50.0f,name="dream-50" },
+            };
+
+            float[] forwardAccel = new float[settingsSet.Length];
+            float[] angleChange = new float[settingsSet.Length];
+            float[] totalSpeedGain = new float[settingsSet.Length];
+
+            for(int s=0;s<settingsSet.Length;s++)
+            {
+                AccelSettings settings = settingsSet[s];
+                Vector2 current = start;
+                float anglechange = 0;
+                float time = 0;
+                while (time < 1.0)
+                {
+                    current = Q3ApplyOptimumAccel(current,settings,0,frametime,start,ref anglechange);
+                    time += frametime;
+                }
+                float delta = current.Length() - start.Length();
+                float startDirVel = Vector2.Dot(startNormalized, current);
+                float deltaSameDir = startDirVel - start.Length();
+                delta /= time;
+                deltaSameDir /= time;
+                anglechange /= time;
+                totalSpeedGain[s] = delta;
+                forwardAccel[s] = deltaSameDir;
+                angleChange[s] = anglechange;
+                Console.WriteLine($"Results for {settings.name}: {delta}, {deltaSameDir}, {anglechange}");
+            }
         }
 
         static void Q3FPSAcceleration()
@@ -1238,7 +1489,15 @@ namespace VariousStuff
             const int YAW  = 1;
             const int ROLL = 2;
 
-            void AngleVectors(Vector3 angles, ref Vector3 forward, ref Vector3 right, ref Vector3 up)
+            public static Vector2 AngleFrontVec(float yaw)
+            {
+                Vector3 angels = new Vector3() { Y = yaw };
+                Vector3 forward = new Vector3(), right= new Vector3(), up= new Vector3();
+                AngleVectors(angels, ref forward, ref right, ref up);
+                return new Vector2(forward.X, forward.Y);
+            }
+
+            public static void AngleVectors(Vector3 angles, ref Vector3 forward, ref Vector3 right, ref Vector3 up)
             {
                 float angle;
                 float sr, sp, sy, cr, cp, cy;
@@ -1263,6 +1522,63 @@ namespace VariousStuff
                 up.X = (cr * sp * cy + -sr * -sy);
                 up.Y = (cr * sp * sy + -sr * cy);
                 up.Z = cr * cp;
+            }
+
+            public static float vecToYaw(Vector2 vec)
+            {
+                Vector3 full = new Vector3(vec,0);
+                Vector3 angles = new Vector3();
+                vectoangles(full, ref angles);
+                return angles.Y;
+            }
+            public static void vectoangles(Vector3 value1, ref Vector3 angles)
+            {
+                float forward;
+                float yaw, pitch;
+
+                if (value1.Y == 0 && value1.X == 0)
+                {
+                    yaw = 0;
+                    if (value1.Z > 0)
+                    {
+                        pitch = 90;
+                    }
+                    else
+                    {
+                        pitch = 270;
+                    }
+                }
+                else
+                {
+                    if (value1.X != 0)
+                    {
+                        yaw = (float)(Math.Atan2(value1.Y, value1.X) * 180 / Math.PI);
+                    }
+                    else if (value1.Y > 0)
+                    {
+                        yaw = 90;
+                    }
+                    else
+                    {
+                        yaw = 270;
+                    }
+                    if (yaw < 0)
+                    {
+                        yaw += 360;
+                    }
+
+                    forward = (float)Math.Sqrt(value1.X * value1.X + value1.Y * value1.Y);
+                    pitch = (float)(Math.Atan2(value1.Z, forward) * 180 / Math.PI);
+                    if (pitch < 0)
+                    {
+                        pitch += 360;
+                    }
+                }
+
+
+                angles.X = -pitch;
+                angles.Y = yaw;
+                angles.Z = 0;
             }
 
         }

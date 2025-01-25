@@ -719,13 +719,23 @@ namespace VariousStuff
             float maxFront = idealVelRatio * velTotal;
             Vector2 normVel = Vector2.Normalize(velocity);
             //idealFrontalVec = velocity * idealVelRatio;
-            frontOvershoot = Vector2.Dot(wishdir, normVel);
-            if(frontOvershoot > maxFront)
+            //frontOvershoot = (velocity + wishdir * 2).Length() - velTotal;
+            //frontOvershoot = (float)Math.Sqrt(velTotal*velTotal+accelspeed*accelspeed*2) - velTotal;
+            //frontOvershoot = Vector2.Dot(wishdir, normVel);
+            while(((velocity + wishdir * 2).Length() - velTotal) > maxFront * 2)
             {
-                float ratio = maxFront / frontOvershoot;
-                //ratio *= 0.95f;
-                wishdir *= ratio;
+                wishdir *= 0.98f;
             }
+
+            //wishdir *= (1.0f- ((wishspeed + accelAddSlow)-currentspeed)*0.0001f);
+            /*if(frontOvershoot > maxFront*2)
+            {
+                double x = Math.Sqrt(maxFront) * Math.Sqrt(maxFront + velTotal);
+
+                float ratio = (float)x / accelspeed;
+                ratio =(float) (ratio);
+                wishdir *= ratio;
+            }*/
 
             velocity += wishdir;
             return velocity;
@@ -745,7 +755,7 @@ namespace VariousStuff
             {
                 if (set.dreamMode)
                 {
-                    frontVec = PM_DreamAccelerate(vel, frontVec, frametime, 320, 1, 150,100);
+                    frontVec = PM_DreamAccelerate(vel, frontVec, frametime, 320, 1, 30,200);
                 }
                 else
                 {
@@ -775,7 +785,7 @@ namespace VariousStuff
 
         static void Q3WishSpeedAccelForwardCalc()
         {
-            Vector2 start = new Vector2(1000,0);
+            Vector2 start = new Vector2(400,0);
             Vector2 startNormalized = Vector2.Normalize(start);
             float frametime = 0.007f;
             AccelSettings[] settingsSet = new AccelSettings[] {  

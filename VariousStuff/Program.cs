@@ -741,7 +741,7 @@ namespace VariousStuff
             return velocity;
         }
 
-        static Vector2 Q3ApplyOptimumAccel(Vector2 vel, AccelSettings set, float friction, float frametime, Vector2 approach, ref float angleChange)
+        static Vector2 Q3ApplyOptimumAccel(Vector2 vel, AccelSettings set, float friction, float frametime, Vector2 approach, ref float angleChange, ref bool direction, float angleFlipDelta)
         {
             double bestAngle = Q3OptimumAngleCalc(vel, set, friction, frametime);
             float originalAngle = Q3Accelerator.vecToYaw(Vector2.Normalize(vel));
@@ -749,7 +749,18 @@ namespace VariousStuff
             float angleDelta = AngleSubtract(originalAngle, angleApproach);
             float angle = originalAngle;
             bestAngle += set.angleOffset;
-            angle += angleDelta > 0 ? -(float)bestAngle : (float)bestAngle;
+            if(angleFlipDelta == 0)
+            {
+                angle += angleDelta > 0 ? -(float)bestAngle : (float)bestAngle;
+            }
+            else
+            {
+                if (Math.Abs(angleDelta) > angleFlipDelta)
+                {
+                    direction = angleDelta > 0;
+                }
+                angle += direction  ? -(float)bestAngle : (float)bestAngle;
+            }
             Vector2 frontVec = Q3Accelerator.AngleFrontVec(angle);
             if (set.quajkMode)
             {
@@ -788,6 +799,7 @@ namespace VariousStuff
             Vector2 start = new Vector2(400,0);
             Vector2 startNormalized = Vector2.Normalize(start);
             float frametime = 0.007f;
+            float angleFlipDelta = 50;
             AccelSettings[] settingsSet = new AccelSettings[] {  
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,name="VQ3" }, // vq3
                 new AccelSettings(){wishspeed = 30,accel = 70.0f,name="CPM" }, // vq3
@@ -852,27 +864,31 @@ namespace VariousStuff
             float[] angleChange = new float[settingsSet.Length];
             float[] totalSpeedGain = new float[settingsSet.Length];
 
-            for(int s=0;s<settingsSet.Length;s++)
+            for (int s = 0; s < settingsSet.Length; s++)
             {
-                AccelSettings settings = settingsSet[s];
-                Vector2 current = start;
-                float anglechange = 0;
-                float time = 0;
-                while (time < 1.0)
+                for (float flipDelta = 0; flipDelta < angleFlipDelta * 1.5; flipDelta += angleFlipDelta)
                 {
-                    current = Q3ApplyOptimumAccel(current,settings,0,frametime,start,ref anglechange);
-                    time += frametime;
+                    AccelSettings settings = settingsSet[s];
+                    Vector2 current = start;
+                    float anglechange = 0;
+                    float time = 0;
+                    bool direction = false;
+                    while (time < 1.0)
+                    {
+                        current = Q3ApplyOptimumAccel(current, settings, 0, frametime, start, ref anglechange, ref direction, flipDelta);
+                        time += frametime;
+                    }
+                    float delta = current.Length() - start.Length();
+                    float startDirVel = Vector2.Dot(startNormalized, current);
+                    float deltaSameDir = startDirVel - start.Length();
+                    delta /= time;
+                    deltaSameDir /= time;
+                    anglechange /= time;
+                    totalSpeedGain[s] = delta;
+                    forwardAccel[s] = deltaSameDir;
+                    angleChange[s] = anglechange;
+                    Console.WriteLine($"Results for {settings.name}, flipdelta {flipDelta}: {delta}, {deltaSameDir}, {anglechange}");
                 }
-                float delta = current.Length() - start.Length();
-                float startDirVel = Vector2.Dot(startNormalized, current);
-                float deltaSameDir = startDirVel - start.Length();
-                delta /= time;
-                deltaSameDir /= time;
-                anglechange /= time;
-                totalSpeedGain[s] = delta;
-                forwardAccel[s] = deltaSameDir;
-                angleChange[s] = anglechange;
-                Console.WriteLine($"Results for {settings.name}: {delta}, {deltaSameDir}, {anglechange}");
             }
         }
 

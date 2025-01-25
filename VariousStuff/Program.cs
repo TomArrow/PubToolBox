@@ -710,32 +710,29 @@ namespace VariousStuff
                 accelspeed = addspeed;
             }
 
-            wishdir *= accelspeed;
 
-            float velTotal =velocity.Length();
+            float velTotal = velocity.Length();
             float w = accelAddSlow + wishspeed;
             idealVelRatio = w * w / (velocity.LengthSquared());
-            idealVelRatio *= accelAddSlow / (wishspeed+accelAddSlow);
+            idealVelRatio *= accelAddSlow / (wishspeed + accelAddSlow);
             float maxFront = idealVelRatio * velTotal;
-            Vector2 normVel = Vector2.Normalize(velocity);
-            //idealFrontalVec = velocity * idealVelRatio;
-            //frontOvershoot = (velocity + wishdir * 2).Length() - velTotal;
-            //frontOvershoot = (float)Math.Sqrt(velTotal*velTotal+accelspeed*accelspeed*2) - velTotal;
-            //frontOvershoot = Vector2.Dot(wishdir, normVel);
-            while(((velocity + wishdir * 2).Length() - velTotal) > maxFront * 2)
+
+
+            double y = maxFront;
+            double h = 2.2;
+            //double scale = (-(wishdir.X * velocity.X) - wishdir.Y * velocity.Y + Math.Sqrt(Math.Pow(wishdir.X * velocity.X + wishdir.Y * velocity.Y, 2) + 4 * y * (Math.Pow(wishdir.X, 2) + Math.Pow(wishdir.Y, 2)) * (y + Math.Sqrt(Math.Pow(velocity.X, 2) + Math.Pow(velocity.Y, 2))))) / (2.0* (Math.Pow(wishdir.X, 2) + Math.Pow(wishdir.Y, 2)));
+            double scale = (-2 * wishdir.X * velocity.X - 2 * wishdir.Y * velocity.Y + Math.Sqrt(Math.Pow(2 * wishdir.X * velocity.X + 2 * wishdir.Y * velocity.Y, 2) + 4 * h * y * (Math.Pow(wishdir.X, 2) + Math.Pow(wishdir.Y, 2)) * (h * y + 2 * Math.Sqrt(Math.Pow(velocity.X, 2) + Math.Pow(velocity.Y, 2))))) / (2.0* h * (Math.Pow(wishdir.X, 2) + Math.Pow(wishdir.Y, 2)));
+
+            if (scale > accelspeed)
             {
-                wishdir *= 0.98f;
+                scale = accelspeed;
             }
+            wishdir *= (float)scale;
 
-            //wishdir *= (1.0f- ((wishspeed + accelAddSlow)-currentspeed)*0.0001f);
-            /*if(frontOvershoot > maxFront*2)
+            if (currentspeed > neededSpeedSlow)
             {
-                double x = Math.Sqrt(maxFront) * Math.Sqrt(maxFront + velTotal);
-
-                float ratio = (float)x / accelspeed;
-                ratio =(float) (ratio);
-                wishdir *= ratio;
-            }*/
+                wishdir *= (1.0f -(currentspeed-neededSpeedSlow)*0.1f);
+            }
 
             velocity += wishdir;
             return velocity;
@@ -766,7 +763,7 @@ namespace VariousStuff
             {
                 if (set.dreamMode)
                 {
-                    frontVec = PM_DreamAccelerate(vel, frontVec, frametime, 320, 1, 30,200);
+                    frontVec = PM_DreamAccelerate(vel, frontVec, frametime, 320, 1, 100,200);
                 }
                 else
                 {
@@ -796,10 +793,10 @@ namespace VariousStuff
 
         static void Q3WishSpeedAccelForwardCalc()
         {
-            Vector2 start = new Vector2(400,0);
+            Vector2 start = new Vector2(3000,0);
             Vector2 startNormalized = Vector2.Normalize(start);
             float frametime = 0.007f;
-            float angleFlipDelta = 50;
+            float angleFlipDelta = 30;
             AccelSettings[] settingsSet = new AccelSettings[] {  
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,name="VQ3" }, // vq3
                 new AccelSettings(){wishspeed = 30,accel = 70.0f,name="CPM" }, // vq3
@@ -831,6 +828,7 @@ namespace VariousStuff
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=40.0f,name="QuaJK-40" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=45.0f,name="QuaJK-45" }, 
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=50.0f,name="QuaJK-50" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=-5.0f,name="dream-minus5" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.0f,name="dream-0" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=1.0f,name="dream-1" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=2.0f,name="dream-2" },
@@ -866,14 +864,15 @@ namespace VariousStuff
 
             for (int s = 0; s < settingsSet.Length; s++)
             {
-                for (float flipDelta = 0; flipDelta < angleFlipDelta * 1.5; flipDelta += angleFlipDelta)
+                float flipDelta = 0;
+                //for (float flipDelta = 0; flipDelta < angleFlipDelta * 1.5; flipDelta += angleFlipDelta)
                 {
                     AccelSettings settings = settingsSet[s];
                     Vector2 current = start;
                     float anglechange = 0;
                     float time = 0;
                     bool direction = false;
-                    while (time < 1.0)
+                    while (time < 10.0)
                     {
                         current = Q3ApplyOptimumAccel(current, settings, 0, frametime, start, ref anglechange, ref direction, flipDelta);
                         time += frametime;

@@ -719,7 +719,7 @@ namespace VariousStuff
 
 
             double y = maxFront;
-            double h = 2.2;
+            double h = 2.0;
             //double scale = (-(wishdir.X * velocity.X) - wishdir.Y * velocity.Y + Math.Sqrt(Math.Pow(wishdir.X * velocity.X + wishdir.Y * velocity.Y, 2) + 4 * y * (Math.Pow(wishdir.X, 2) + Math.Pow(wishdir.Y, 2)) * (y + Math.Sqrt(Math.Pow(velocity.X, 2) + Math.Pow(velocity.Y, 2))))) / (2.0* (Math.Pow(wishdir.X, 2) + Math.Pow(wishdir.Y, 2)));
             double scale = (-2 * wishdir.X * velocity.X - 2 * wishdir.Y * velocity.Y + Math.Sqrt(Math.Pow(2 * wishdir.X * velocity.X + 2 * wishdir.Y * velocity.Y, 2) + 4 * h * y * (Math.Pow(wishdir.X, 2) + Math.Pow(wishdir.Y, 2)) * (h * y + 2 * Math.Sqrt(Math.Pow(velocity.X, 2) + Math.Pow(velocity.Y, 2))))) / (2.0* h * (Math.Pow(wishdir.X, 2) + Math.Pow(wishdir.Y, 2)));
 
@@ -793,7 +793,7 @@ namespace VariousStuff
 
         static void Q3WishSpeedAccelForwardCalc()
         {
-            Vector2 start = new Vector2(3000,0);
+            Vector2 start = new Vector2(4000,0);
             Vector2 startNormalized = Vector2.Normalize(start);
             float frametime = 0.007f;
             float angleFlipDelta = 30;
@@ -830,6 +830,16 @@ namespace VariousStuff
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=50.0f,name="QuaJK-50" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=-5.0f,name="dream-minus5" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.0f,name="dream-0" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.01f,name="dream-001" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.1f,name="dream-01" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.2f,name="dream-02" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.3f,name="dream-03" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.4f,name="dream-04" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.5f,name="dream-05" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.6f,name="dream-06" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.7f,name="dream-07" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.8f,name="dream-08" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.9f,name="dream-09" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=1.0f,name="dream-1" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=2.0f,name="dream-2" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=3.0f,name="dream-3" },

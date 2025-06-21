@@ -41,7 +41,7 @@ namespace VariousStuff
             //Q3FPSAcceleration3D();
             //GroundFrictionMax3D();
             Q3WishSpeedAccelForwardCalc();
-
+            Q3FPSSnapDependence();
         }
 
         static void GroundFrictionMax3D()
@@ -673,8 +673,6 @@ namespace VariousStuff
             float accelAddSlow, accelAddHigh;
             float neededSpeedSlow, neededSpeedHigh;
             float idealVelRatio;
-            Vector2 idealFrontalVec;
-            float frontOvershoot;
 
             currentspeed = Vector2.Dot(velocity, wishdir);
 
@@ -729,10 +727,10 @@ namespace VariousStuff
             }
             wishdir *= (float)scale;
 
-            if (currentspeed > neededSpeedSlow)
-            {
-                wishdir *= (1.0f -(currentspeed-neededSpeedSlow)*0.1f);
-            }
+            //if (currentspeed > neededSpeedSlow)
+            //{
+            //    wishdir *= (1.0f -(currentspeed-neededSpeedSlow)*0.1f);
+            //}
 
             velocity += wishdir;
             return velocity;
@@ -763,7 +761,7 @@ namespace VariousStuff
             {
                 if (set.dreamMode)
                 {
-                    frontVec = PM_DreamAccelerate(vel, frontVec, frametime, 320, 1, 100,200);
+                    frontVec = PM_DreamAccelerate(vel, frontVec, frametime, 320, 1, set.dreammaxaccel,set.dreammaxwishspeed);
                 }
                 else
                 {
@@ -781,15 +779,265 @@ namespace VariousStuff
             return frontVec;
         }
 
-        struct AccelSettings {
+        class AccelSettings {
             public string name;
             public float wishspeed;
             public float accel;
             public bool quajkMode;
             public bool dreamMode;
             public float angleOffset;
+            public float dreammaxaccel = 100;
+            public float dreammaxwishspeed = 200;
         }
 
+
+
+        const int RESET_TIME = 500;
+
+        static void CL_AdjustTimeDelta(int serverTime,  int clientRealTime, ref int clServerTimeDelta, ref int clServerTime, ref bool extrapolatedSnapshot)
+        {
+            int resetTime;
+            int newDelta;
+            int deltaDelta;
+
+
+            resetTime = RESET_TIME;
+
+            newDelta = serverTime - clientRealTime;
+            deltaDelta = Math.Abs(newDelta - clServerTimeDelta);
+
+            if (deltaDelta > RESET_TIME)
+            {
+                clServerTimeDelta = newDelta;
+                //cl.oldServerTime = cl.snap.serverTime;  // FIXME: is this a problem for cgame?
+                clServerTime = serverTime;
+            }
+            else if (deltaDelta > 100)
+            {
+                // fast adjust, cut the difference in half
+                clServerTimeDelta = (clServerTimeDelta + newDelta) >> 1;
+            }
+            else
+            {
+                    if (extrapolatedSnapshot)
+                    {
+                        extrapolatedSnapshot = false;
+                        clServerTimeDelta -= 2;
+                    }
+                    else
+                    {
+                    // otherwise, move our sense of time forward to minimize total latency
+                        clServerTimeDelta++;
+                    }
+            }
+
+        }
+
+        struct AverageHelper {
+            public double sum;
+            public UInt64 samples;
+            public double GetAverage()
+            {
+                return sum / (double)samples;
+            }
+        }
+
+        static double BG_MsecToEffectiveGravity(int referenceMsec, double gravity)
+        {
+            if (referenceMsec ==0|| referenceMsec == -2) return gravity;
+
+            return Math.Round((double)referenceMsec * 0.001f * gravity) * 1000.0f / (double)referenceMsec;
+        }
+
+        static FpsSnapsComboData Q3FPSSnapDependenceActual(int fps,int snaps, int sv_fps, int maxTime)
+        {
+            int clientmsec = 1000/ fps;
+            int snapsMsec = 1000/ snaps;
+            int serverMsec = 1000 / sv_fps;
+            int clientRealTime = 0;
+            int serverTime = 0;
+            int nextServerTime = snapsMsec;
+            int serverTime_Frame = 0; // the other one is for snaps. this one is actual sv_fps
+            int nextServerTime_Frame = snapsMsec;
+            int clServerTime = 0;
+            int clServerTimeOld = 0;
+            int clServerTimeDelta = 0;
+            bool newSnaps = false;
+            UInt64[] msecBucketsPre = new UInt64[1001];
+            UInt64[] msecBuckets = new UInt64[1001];
+            bool extrapolatedSnapshot = false;
+
+            AverageHelper gravityAverage = new AverageHelper();
+
+            while (clientRealTime < maxTime)
+            {
+                newSnaps = false;
+                msecBucketsPre[clServerTime - clServerTimeOld]++;
+                while (nextServerTime_Frame < clientRealTime)
+                {
+                    // this is a sv_Fps frame
+                    serverTime_Frame = nextServerTime_Frame;
+                    nextServerTime_Frame += serverMsec;
+
+                    while (nextServerTime <= serverTime_Frame)
+                    {
+                        // this is a snapshot
+                        serverTime = nextServerTime;
+                        //nextServerTime += snapsMsec;
+                        nextServerTime = serverTime_Frame + snapsMsec;
+                        newSnaps = true;
+                    }
+                }
+                clServerTime = clientRealTime + clServerTimeDelta;
+                if (clServerTime < clServerTimeOld)
+                {
+                    clServerTime = clServerTimeOld;
+                }
+                if (clientRealTime + clServerTimeDelta >= serverTime - 5)
+                {
+                    extrapolatedSnapshot = true;
+                }
+
+                if (newSnaps)
+                {
+                    CL_AdjustTimeDelta(serverTime, clientRealTime, ref clServerTimeDelta, ref clServerTime, ref extrapolatedSnapshot);
+                }
+
+                msecBuckets[clServerTime - clServerTimeOld]++;
+                gravityAverage.sum += BG_MsecToEffectiveGravity(clServerTime - clServerTimeOld ,800);
+                gravityAverage.samples++;
+
+                clServerTimeOld = clServerTime;
+                clientRealTime += clientmsec;
+            }
+
+            FpsSnapsComboData data = new FpsSnapsComboData();
+            data.gravityAVg = gravityAverage.GetAverage();
+            for(int i=0; i < 1001; i++)
+            {
+                data.bucketPercentagesOfMain[i] = 100.0 * (double)msecBuckets[i] / (double)msecBuckets[clientmsec];
+            }
+            if(clientmsec - 2 >= 0 && clientmsec + 1 < 1001)
+            {
+                data.underVsOverPercent = 100.0 * (double)msecBuckets[clientmsec - 2] / (double)msecBuckets[clientmsec + 1];
+            }
+            else
+            {
+                data.underVsOverPercent = double.NaN;
+            }
+            return data;
+        }
+        static void Q3FPSSnapDependence()
+        {
+            int[] sv_fpsTries = new int[] { 20,25,30,50,100,125,142,200,250,500 };
+            int msec;
+            int snapsMsec;
+            int sv_fpsMsec;
+            List<FpsSnapsComboData> datas = new List<FpsSnapsComboData>();
+            FpsSnapsComboData queued = null;
+            SortedSet<int> possibleSnaps = new SortedSet<int>();
+            foreach (int sv_fps in sv_fpsTries){
+                sv_fpsMsec = 1000 / sv_fps;
+                int lastmsec = -1;
+                possibleSnaps.Clear(); // i wasnt able to do this any smarter, sorry.
+                for (int snaps = 5; snaps < 1001; snaps++)
+                {
+                    snapsMsec = 1000 / snaps;
+
+                    if (snapsMsec < sv_fpsMsec)
+                    {
+                        continue; // actually just move on. why set a lower value. nonsensical.
+                        snapsMsec = sv_fpsMsec; // impossible to get more snaps than sv_fps (other than local, but forget about that)
+                    }
+
+                    if (snapsMsec > sv_fpsMsec && snapsMsec / sv_fpsMsec * sv_fpsMsec != snapsMsec)
+                    {
+                        // snapsMsec will always end up a multiple of sv_fpsmsec.
+                        // e.g. 60 snaps would be snap every 16 msec but its only checked at every server frame (every 10ms). 
+                        // so it turns into 20ms, thus 50 snaps.
+                        snapsMsec = (snapsMsec / sv_fpsMsec + 1)* sv_fpsMsec;
+                    }
+                    possibleSnaps.Add((int)Math.Ceiling(1000.0/(double)snapsMsec));
+
+                }
+                for (int fps = 1000; fps >= 5; fps--)
+                {
+                    msec = 1000 / fps;
+                    if (msec != lastmsec)
+                    {
+                        foreach(int snaps in possibleSnaps.Reverse())
+                        {
+                            
+                            queued = Q3FPSSnapDependenceActual(fps, snaps, sv_fps, 1000000);
+                            queued.snaps = snaps;
+                            queued.fps = fps;
+                            queued.sv_fps = sv_fps;
+                            datas.Add(queued);
+                            queued = null;
+                        }
+                    }
+                    lastmsec = msec;
+                }
+            }
+            Console.WriteLine("done");
+
+            StringBuilder csvAll = new StringBuilder();
+            StringBuilder sv100fpsgravsCSV = new StringBuilder();
+
+            StringBuilder sv100fpsgravsCSVColumns = new StringBuilder();
+
+            bool writingColumns = false;
+            int startColumnSnaps = -1;
+            int lastfps = -1;
+            csvAll.Append("sv_fps,snaps,fps,gravity,percentage_2mseclower,percentage_1msechigher\n");
+            foreach (FpsSnapsComboData data in datas)
+            {
+                if (startColumnSnaps == data.snaps && writingColumns)
+                {
+                    writingColumns = false;
+                }
+                if(data.sv_fps == 100)
+                {
+                    if(data.fps != lastfps)
+                    {
+                        sv100fpsgravsCSV.Append($"\n{data.fps}");
+                    }
+                    if (sv100fpsgravsCSVColumns.Length == 0)
+                    {
+                        writingColumns = true;
+                        startColumnSnaps = data.snaps;
+                        sv100fpsgravsCSVColumns.Append(" "); // top left corner is empty
+                    }
+
+                    if (writingColumns)
+                    {
+                        sv100fpsgravsCSVColumns.Append($",{data.snaps}");
+                    }
+                    sv100fpsgravsCSV.Append($",{data.gravityAVg}");
+                    lastfps = data.fps;
+                }
+                int msecThis = 1000 / data.fps;
+                double percentage2Minus = msecThis >= 2 ? data.bucketPercentagesOfMain[msecThis - 2]: double.NaN;
+                double percentage1Plus = msecThis < 1000 ? data.bucketPercentagesOfMain[msecThis + 1]: double.NaN;
+                csvAll.Append($"{data.sv_fps},{data.snaps},{data.fps},{data.gravityAVg},{percentage2Minus},{percentage1Plus}\n");
+            }
+            sv100fpsgravsCSVColumns.Append(sv100fpsgravsCSV);
+            File.WriteAllText("sv_fps100_snaps_fps.csv",sv100fpsgravsCSVColumns.ToString());
+            File.WriteAllText("sv_fps_snaps_fps_all.csv", csvAll.ToString());
+        }
+
+        class FpsSnapsComboData {
+            public double gravityAVg;
+            public double[] bucketPercentagesOfMain = new double[1001];
+            public double underVsOverPercent;
+            public int sv_fps;
+            public int snaps;
+            public int fps;
+            public string ToString()
+            {
+                return $"sv_fps {sv_fps}, snaps {snaps}, fps {fps}, gravity {gravityAVg}";
+            }
+        }
 
         static void Q3WishSpeedAccelForwardCalc()
         {
@@ -800,6 +1048,7 @@ namespace VariousStuff
             AccelSettings[] settingsSet = new AccelSettings[] {  
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,name="VQ3" }, // vq3
                 new AccelSettings(){wishspeed = 30,accel = 70.0f,name="CPM" }, // vq3
+                new AccelSettings(){wishspeed = 30,accel = 100.0f,name="CSS" }, // vq3
                 new AccelSettings(){wishspeed = 200,accel = 2f,name="test1" }, // vq3
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=0.0f,name="QuaJK-0" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,angleOffset=1.0f,name="QuaJK-1" },
@@ -831,11 +1080,13 @@ namespace VariousStuff
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=-5.0f,name="dream-minus5" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.0f,name="dream-0" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.01f,name="dream-001" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.01f,name="dream-001-ws30", dreammaxwishspeed=30 },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.1f,name="dream-01" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.2f,name="dream-02" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.3f,name="dream-03" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.4f,name="dream-04" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.5f,name="dream-05" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.5f,name="dream-05-ws30", dreammaxwishspeed=30 },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.6f,name="dream-06" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.7f,name="dream-07" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=0.8f,name="dream-08" },
@@ -845,27 +1096,33 @@ namespace VariousStuff
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=3.0f,name="dream-3" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=4.0f,name="dream-4" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=5.0f,name="dream-5" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=5.0f,name="dream-5-ws30", dreammaxwishspeed=30  },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=6.0f,name="dream-6" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=7.0f,name="dream-7" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=8.0f,name="dream-8" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=9.0f,name="dream-9" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=10.0f,name="dream-10" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=10.0f,name="dream-10-ws30", dreammaxwishspeed=30  },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=11.0f,name="dream-11" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=12.0f,name="dream-12" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=13.0f,name="dream-13" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=14.0f,name="dream-14" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=15.0f,name="dream-15" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=15.0f,name="dream-15-ws30", dreammaxwishspeed=30  },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=16.0f,name="dream-16" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=17.0f,name="dream-17" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=18.0f,name="dream-18" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=19.0f,name="dream-19" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=20.0f,name="dream-20" }, 
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=20.0f,name="dream-20-ws30", dreammaxwishspeed=30  }, 
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=25.0f,name="dream-25" }, 
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=30.0f,name="dream-30" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=30.0f,name="dream-30-ws30", dreammaxwishspeed=30  },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=35.0f,name="dream-35" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=40.0f,name="dream-40" },
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=45.0f,name="dream-45" }, 
                 new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=50.0f,name="dream-50" },
+                new AccelSettings(){wishspeed = 320,accel = 1.0f,quajkMode=true,dreamMode=true,angleOffset=50.0f,name="dream-50-ws30", dreammaxwishspeed=30 },
             };
 
             float[] forwardAccel = new float[settingsSet.Length];

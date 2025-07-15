@@ -929,7 +929,7 @@ namespace VariousStuff
         }
         static void Q3FPSSnapDependence()
         {
-            int[] sv_fpsTries = new int[] { 20,25,30,50,100,125,142,200,250,500 };
+            int[] sv_fpsTries = new int[] { 20,25,30,50,100,125,142,200,250,500,1000 };
             int msec;
             int snapsMsec;
             int sv_fpsMsec;
@@ -983,8 +983,12 @@ namespace VariousStuff
 
             StringBuilder csvAll = new StringBuilder();
             StringBuilder sv100fpsgravsCSV = new StringBuilder();
+            StringBuilder sv250fpsgravsCSV = new StringBuilder();
+            StringBuilder sv1000fpsgravsCSV = new StringBuilder();
 
             StringBuilder sv100fpsgravsCSVColumns = new StringBuilder();
+            StringBuilder sv250fpsgravsCSVColumns = new StringBuilder();
+            StringBuilder sv1000fpsgravsCSVColumns = new StringBuilder();
 
             bool writingColumns = false;
             int startColumnSnaps = -1;
@@ -1016,13 +1020,57 @@ namespace VariousStuff
                     sv100fpsgravsCSV.Append($",{data.gravityAVg}");
                     lastfps = data.fps;
                 }
+                if(data.sv_fps == 250)
+                {
+                    if(data.fps != lastfps)
+                    {
+                        sv250fpsgravsCSV.Append($"\n{data.fps}");
+                    }
+                    if (sv250fpsgravsCSVColumns.Length == 0)
+                    {
+                        writingColumns = true;
+                        startColumnSnaps = data.snaps;
+                        sv250fpsgravsCSVColumns.Append(" "); // top left corner is empty
+                    }
+
+                    if (writingColumns)
+                    {
+                        sv250fpsgravsCSVColumns.Append($",{data.snaps}");
+                    }
+                    sv250fpsgravsCSV.Append($",{data.gravityAVg}");
+                    lastfps = data.fps;
+                }
+                if(data.sv_fps == 1000)
+                {
+                    if(data.fps != lastfps)
+                    {
+                        sv1000fpsgravsCSV.Append($"\n{data.fps}");
+                    }
+                    if (sv1000fpsgravsCSVColumns.Length == 0)
+                    {
+                        writingColumns = true;
+                        startColumnSnaps = data.snaps;
+                        sv1000fpsgravsCSVColumns.Append(" "); // top left corner is empty
+                    }
+
+                    if (writingColumns)
+                    {
+                        sv1000fpsgravsCSVColumns.Append($",{data.snaps}");
+                    }
+                    sv1000fpsgravsCSV.Append($",{data.gravityAVg}");
+                    lastfps = data.fps;
+                }
                 int msecThis = 1000 / data.fps;
                 double percentage2Minus = msecThis >= 2 ? data.bucketPercentagesOfMain[msecThis - 2]: double.NaN;
                 double percentage1Plus = msecThis < 1000 ? data.bucketPercentagesOfMain[msecThis + 1]: double.NaN;
                 csvAll.Append($"{data.sv_fps},{data.snaps},{data.fps},{data.gravityAVg},{percentage2Minus},{percentage1Plus}\n");
             }
             sv100fpsgravsCSVColumns.Append(sv100fpsgravsCSV);
+            sv250fpsgravsCSVColumns.Append(sv250fpsgravsCSV);
+            sv1000fpsgravsCSVColumns.Append(sv1000fpsgravsCSV);
             File.WriteAllText("sv_fps100_snaps_fps.csv",sv100fpsgravsCSVColumns.ToString());
+            File.WriteAllText("sv_fps250_snaps_fps.csv", sv250fpsgravsCSVColumns.ToString());
+            File.WriteAllText("sv_fps1000_snaps_fps.csv", sv1000fpsgravsCSVColumns.ToString());
             File.WriteAllText("sv_fps_snaps_fps_all.csv", csvAll.ToString());
         }
 
